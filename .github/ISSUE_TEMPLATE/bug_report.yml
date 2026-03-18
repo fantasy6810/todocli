@@ -1,0 +1,75 @@
+name: Bug Report
+description: Report something that isn't working as documented
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please fill out each section so we can reproduce the issue.
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python Version
+      description: "Run `python --version` and paste the output."
+      placeholder: "e.g., Python 3.11.4"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: textarea
+    id: packages
+    attributes:
+      label: Installed Package Versions
+      description: "Run `pip freeze | grep -E 'click|rich'` and paste the output."
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: "Exact commands you ran, in order."
+      value: |
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: "What the README says should happen."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: "What actually happened. Paste the full error message."
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context (Optional)
+      description: "Any guesses about the cause, or other relevant info."
+    validations:
+      required: false

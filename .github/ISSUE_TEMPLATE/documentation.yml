@@ -1,0 +1,74 @@
+name: Documentation Issue
+description: Report missing, unclear, or incorrect documentation
+title: "[DOCS] "
+labels: ["documentation"]
+body:
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: Documentation Type
+      options:
+        - README
+        - API documentation
+        - Inline comments
+        - Tutorial / Guide
+        - Code examples
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: location
+    attributes:
+      label: Location
+      description: Link or file path where the problem exists
+      placeholder: "e.g., docs/api.md#authentication or https://..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: problem-type
+    attributes:
+      label: What's the problem?
+      options:
+        - Missing documentation
+        - Outdated information
+        - Unclear or confusing explanation
+        - Incorrect information
+        - Typo or grammatical error
+        - Missing code example
+        - Broken link
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the issue in detail
+      placeholder: "The section on authentication doesn't explain how to..."
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: audience
+    attributes:
+      label: Who is affected?
+      options:
+        - label: New users / beginners
+        - label: Experienced users
+        - label: Contributors
+        - label: API consumers
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Improvement
+      description: Optional but helpful
+      placeholder: "It would help to add an example showing..."
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Screenshots, related issues, etc.
