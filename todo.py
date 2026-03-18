@@ -5,26 +5,62 @@ import os
 from pathlib import Path
 from datetime import datetime
 
+from filelock import FileLock
 from rich.console import Console
 from rich.table import Table
 
 DATA_FILE = "data/tasks.json"
+LOCK_FILE = f"{DATA_FILE}.lock"
+TASKS_LOCK = FileLock(LOCK_FILE)
+
 console = Console()
+
+
+def _load_tasks_unlocked():
+    """Load tasks without acquiring the file lock."""
+    if not os.path.exists(DATA_FILE):
+        return []
+
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, ValueError):
+        console.print(
+            f"[red]✗[/red] {DATA_FILE} is not valid JSON; starting with an empty task list.")
+        return []
+
+    if not isinstance(data, list):
+        console.print(
+            f"[red]✗[/red] {DATA_FILE} does not contain a list; starting with an empty task list.")
+        return []
+
+    return data
 
 
 def load_tasks():
     """Load tasks from the JSON data file."""
-    if not os.path.exists(DATA_FILE):
-        return []
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    with TASKS_LOCK:
+        return _load_tasks_unlocked()
+
+
+def _save_tasks_unlocked(tasks):
+    """Save tasks without acquiring the file lock."""
+    dirpath = os.path.dirname(DATA_FILE)
+    if dirpath:
+        os.makedirs(dirpath, exist_ok=True)
+
+    temp_path = f"{DATA_FILE}.tmp"
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(tasks, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp_path, DATA_FILE)
 
 
 def save_tasks(tasks):
     """Save tasks to the JSON data file."""
-    os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(tasks, f, indent=2, ensure_ascii=False)
+    with TASKS_LOCK:
+        _save_tasks_unlocked(tasks)
 
 
 @click.group()
@@ -44,24 +80,29 @@ def cli():
 )
 def add(task, priority):
     """Add a new task to the list."""
-    tasks = load_tasks()
-    new_id = max((t["id"] for t in tasks), default=0) + 1
-    new_task = {
-        "id": new_id,
-        "task": task,
-        "priority": priority.lower(),
-        "status": "pending",
-        "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
-    }
-    tasks.append(new_task)
-    save_tasks(tasks)
+    with TASKS_LOCK:
+        tasks = _load_tasks_unlocked()
+        new_id = max((t.get("id", 0)
+                     for t in tasks if isinstance(t, dict)), default=0) + 1
+        new_task = {
+            "id": new_id,
+            "task": task,
+            "priority": priority.lower(),
+            "status": "pending",
+            "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        }
+        tasks.append(new_task)
+        _save_tasks_unlocked(tasks)
+
     console.print(f"[green]✓[/green] Added task #{new_id}: {task}")
 
 
 @cli.command("list")
 def list_tasks():
     """Display all tasks in a formatted table."""
-    tasks = load_tasks()
+    with TASKS_LOCK:
+        tasks = _load_tasks_unlocked()
+
     if not tasks:
         console.print("[yellow]No tasks found.[/yellow]")
         return
@@ -74,12 +115,15 @@ def list_tasks():
 
     priority_colors = {"high": "red", "medium": "yellow", "low": "green"}
     for t in tasks:
-        color = priority_colors.get(t["priority"], "white")
-        status_display = "✓ done" if t["status"] == "done" else "○ pending"
+        if not isinstance(t, dict):
+            continue
+        priority = t.get("priority", "medium")
+        color = priority_colors.get(priority, "white")
+        status_display = "✓ done" if t.get("status") == "done" else "○ pending"
         table.add_row(
-            str(t["id"]),
-            t["task"],
-            f"[{color}]{t['priority']}[/{color}]",
+            str(t.get("id", "")),
+            t.get("task", ""),
+            f"[{color}]{priority}[/{color}]",
             status_display,
         )
 
@@ -90,13 +134,16 @@ def list_tasks():
 @click.argument("task_id", type=int)
 def complete(task_id):
     """Mark a task as done by its ID."""
-    tasks = load_tasks()
-    for t in tasks:
-        if t["id"] == task_id:
-            t["status"] = "done"
-            save_tasks(tasks)
-            console.print(f"[green]✓[/green] Completed: {t['task']}")
-            return
+    with TASKS_LOCK:
+        tasks = _load_tasks_unlocked()
+        for t in tasks:
+            if isinstance(t, dict) and t.get("id") == task_id:
+                t["status"] = "done"
+                _save_tasks_unlocked(tasks)
+                console.print(
+                    f"[green]✓[/green] Completed: {t.get('task', '')}")
+                return
+
     console.print(f"[red]✗[/red] Task #{task_id} not found.")
 
 
@@ -104,14 +151,17 @@ def complete(task_id):
 @click.argument("task_id", type=int)
 def delete(task_id):
     """Remove a task by its ID."""
-    tasks = load_tasks()
-    original_len = len(tasks)
-    tasks = [t for t in tasks if t["id"] != task_id]
-    if len(tasks) < original_len:
-        save_tasks(tasks)
-        console.print(f"[green]✓[/green] Deleted task #{task_id}")
-    else:
-        console.print(f"[red]✗[/red] Task #{task_id} not found.")
+    with TASKS_LOCK:
+        tasks = _load_tasks_unlocked()
+        original_len = len(tasks)
+        tasks = [t for t in tasks if not (
+            isinstance(t, dict) and t.get("id") == task_id)]
+        if len(tasks) < original_len:
+            _save_tasks_unlocked(tasks)
+            console.print(f"[green]✓[/green] Deleted task #{task_id}")
+            return
+
+    console.print(f"[red]✗[/red] Task #{task_id} not found.")
 
 
 @cli.command()
@@ -123,7 +173,9 @@ def delete(task_id):
 )
 def export(output):
     """Export all tasks to a JSON file."""
-    tasks = load_tasks()
+    with TASKS_LOCK:
+        tasks = _load_tasks_unlocked()
+
     if not tasks:
         console.print("[yellow]No tasks to export.[/yellow]")
         return
