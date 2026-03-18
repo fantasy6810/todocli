@@ -24,15 +24,11 @@ def _load_tasks_unlocked():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except (json.JSONDecodeError, ValueError):
-        console.print(
-            f"[red]✗[/red] {DATA_FILE} is not valid JSON; starting with an empty task list.")
-        return []
+    except (json.JSONDecodeError, ValueError) as e:
+        return _handle_corrupted_data(str(e))
 
     if not isinstance(data, list):
-        console.print(
-            f"[red]✗[/red] {DATA_FILE} does not contain a list; starting with an empty task list.")
-        return []
+        return _handle_corrupted_data("does not contain a list")
 
     return data
 
@@ -63,6 +59,22 @@ def save_tasks(tasks):
         _save_tasks_unlocked(tasks)
 
 
+def _handle_corrupted_data(message: str | None = None):
+    """Handle corrupted data file by backing it up and starting fresh."""
+    from time import time
+    ts = int(time())
+    if os.path.exists(DATA_FILE):
+        backup_path = f"{DATA_FILE}-{ts}.bak"
+        os.rename(DATA_FILE, backup_path)
+        console.print(
+            f"[red]✗[/red] Corrupted data file detected. Backed up to {backup_path}. Starting with an empty task list.")
+
+    if message:
+        console.print(f"[red]✗[/red] {message}")
+
+    return []
+
+
 @click.group()
 def cli():
     """todocli - A simple command-line to-do list manager."""
@@ -82,8 +94,12 @@ def add(task, priority):
     """Add a new task to the list."""
     with TASKS_LOCK:
         tasks = _load_tasks_unlocked()
-        new_id = max((t.get("id", 0)
-                     for t in tasks if isinstance(t, dict)), default=0) + 1
+        try:
+            new_id = max((t.get("id", 0)
+                          for t in tasks if isinstance(t, dict)), default=0) + 1
+        except Exception as e:
+            tasks = _handle_corrupted_data(str(e))
+            new_id = 1
         new_task = {
             "id": new_id,
             "task": task,
